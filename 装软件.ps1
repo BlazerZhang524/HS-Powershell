@@ -94,7 +94,7 @@ function Install-Encryption{
 Write-Host ""
 Write-Host "开始安装加密软件"
 $encrypt=Start-Process -FilePath "c:\temp\亿赛通加密软件\V3.8S_Client\setup.exe" -ArgumentList '/s /L0x0804 /f1"c:\temp\亿赛通加密软件\V3.8S_Client\CDG_setup.iss"' -WorkingDirectory "D:\laptop_setup\亿赛通加密软件\V3.8S_Client" -Wait -PassThru
-if($encrypt.ExitCode -eq 0 -or -$encrypt.ExitCode -eq 3010){Write-Host "加密软件安装成功"}
+if($encrypt.ExitCode -eq 0 -or $encrypt.ExitCode -eq 3010){Write-Host "加密软件安装成功"}
 else{Write-Host "加密软件安装失败"}
 }
 #Install Mcafee 
