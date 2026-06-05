@@ -193,7 +193,7 @@ function Install-Lianruan {
     Write-Host ""
     Write-Log "开始安装联软"
 
-    $Lianruan = Start-Process -FilePath "C:\temp\联软桌面助手.exe" -ArgumentList "/quiet /NoQueryBox"
+    Start-Process -FilePath "C:\temp\联软桌面助手.exe" -ArgumentList "/quiet /NoQueryBox"
 
     Start-Sleep 120
 
@@ -204,6 +204,59 @@ function Install-Lianruan {
     else {
         Write-Host "联软安装失败" -ForegroundColor Red
         Write-Log "联软安装失败，未检测到服务 UniAccessAgent" "ERROR"
+    }
+}
+
+#Install 半透明mcafee
+function Install-AV2 {
+    Write-Host ""
+    Write-Host "开始安装半透明mcafee"
+    Write-Host ""
+    Write-Log "开始安装半透明 McAfee"
+
+    $AV2 = Start-Process -FilePath "C:\temp\EUAPackage_TA584_TP10.7.18.exe" -ArgumentList "-y" -PassThru -Wait
+    Write-InstallResult -SoftwareName "半透明McAfee" -ExitCode $AV2.ExitCode
+}
+
+#Install 刷卡打印插件
+function Install-Print {
+    Write-Host ""
+    Write-Host "开始安装刷卡打印插件"
+    Write-Host ""
+    Write-Log "开始安装刷卡打印插件"
+
+    Start-Process -FilePath "C:\temp\PrintToCloud setup.exe" -ArgumentList "-silent 10.102.27.15 -force"
+
+    Start-Sleep -Seconds 120
+
+    if (Test-Path "C:\rsprinterex\PrintToCloud.exe") {
+        Write-Host "刷卡打印插件安装成功" -ForegroundColor Green
+        Write-Log "刷卡打印插件安装成功，检测到 C:\rsprinterex\PrintToCloud.exe" "SUCCESS"
+    }
+    else {
+        Write-Host "刷卡打印插件安装失败" -ForegroundColor Red
+        Write-Log "刷卡打印插件安装失败，未检测到 C:\rsprinterex\PrintToCloud.exe" "ERROR"
+    }
+}
+
+#Install 企业网盘
+function Install-NetDrive {
+    Write-Host ""
+    Write-Host "开始安装企业网盘"
+    Write-Host ""
+    Write-Log "开始安装企业网盘"
+
+    Start-Process -FilePath "C:\temp\翰森制药企业网盘\zBox_installer.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
+
+    Start-Sleep -Seconds 120
+
+    if (Get-Process zbox_client -ErrorAction SilentlyContinue) {
+        Write-Host "企业网盘安装成功" -ForegroundColor Green
+        Write-Log "企业网盘安装成功，检测到进程 zbox_client" "SUCCESS"
+    }
+    else {
+        Write-Host "企业网盘安装失败" -ForegroundColor Red
+        Write-Log "企业网盘安装失败，未检测到进程 zbox_client" "ERROR"
     }
 }
 
@@ -257,6 +310,14 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 20
 
+    Install-Print
+
+    Start-Sleep -Seconds 10
+
+    Install-NetDrive
+
+    Start-Sleep -Seconds 10
+
     Install-Encryption
 
     Start-Sleep -Seconds 20
@@ -274,12 +335,15 @@ if ($ImageCode -eq "standard") {
     Write-Log "准备加入域：$DomainName"
     Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
 
+    Write-Host ""
+    Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
     Write-Log "标准环境流程执行完成，准备清理 C:\temp，保留 InstallLogs 日志文件夹"
 
     Get-ChildItem "C:\temp" -Force |
-    Where-Object { $_.Name -ne "InstallLogs" } |
+    Where-Object { $_.FullName -ine $Script:LogDir } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+    Write-Host "C:\temp 清理完成，准备重启" -ForegroundColor Yellow
     Write-Log "C:\temp 清理完成，准备重启"
 
     shutdown.exe /r /t 120 /c "加域完成，2分钟后重启！"
@@ -289,6 +353,22 @@ elseif ($ImageCode -eq "halfbypass") {
     Write-Log "开始执行半透明环境安装流程"
 
     Install-StandardPackage
+
+    Start-Sleep -Seconds 20
+
+    Install-Print
+
+    Start-Sleep -Seconds 10
+
+    Install-NetDrive
+
+    Start-Sleep -Seconds 10
+
+    Install-Encryption
+
+    Start-Sleep -Seconds 20
+
+    Install-AV2
 
     Start-Sleep -Seconds 10
 
@@ -301,12 +381,15 @@ elseif ($ImageCode -eq "halfbypass") {
     Write-Log "准备加入域：$DomainName"
     Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
 
+    Write-Host ""
+    Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
     Write-Log "半透明环境流程执行完成，准备清理 C:\temp，保留 InstallLogs 日志文件夹"
 
     Get-ChildItem "C:\temp" -Force |
-    Where-Object { $_.Name -ne "InstallLogs" } |
+    Where-Object { $_.FullName -ine $Script:LogDir } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+    Write-Host "C:\temp 清理完成，准备重启" -ForegroundColor Yellow
     Write-Log "C:\temp 清理完成，准备重启"
 
     shutdown.exe /r /t 120 /c "加域完成，2分钟后重启！"
