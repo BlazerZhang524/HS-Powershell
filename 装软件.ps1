@@ -318,6 +318,10 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
+    Install-Lianruan
+
+    Start-Sleep -Seconds 10
+
     Install-Encryption
 
     Start-Sleep -Seconds 20
@@ -357,6 +361,10 @@ elseif ($ImageCode -eq "halfbypass") {
     Start-Sleep -Seconds 20
 
     Install-Print
+
+    Start-Sleep -Seconds 10
+
+    Install-Lianruan
 
     Start-Sleep -Seconds 10
 
