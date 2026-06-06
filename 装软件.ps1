@@ -283,15 +283,33 @@ function Install-NetDrive {
     }
 }
 
-#Set computer name
+$DomainName = "hs.hspharm.com"
+
 Write-Host "请输入计算机名" -ForegroundColor Yellow
 $CN = Read-Host
 Write-Log "输入的新计算机名：$CN"
 
-Write-Host "请输入管理员账号" -ForegroundColor Yellow
-$Cred = Get-Credential
+do {
+    Write-Host "请输入有加域权限的管理员账号" -ForegroundColor Yellow
+    Write-Host "建议格式：HS\用户名 或 用户名@hs.hspharm.com" -ForegroundColor Yellow
 
-$DomainName = "hs.hspharm.com"
+    $Cred = Get-Credential
+
+    Write-Host "正在验证账号密码..." -ForegroundColor Yellow
+    Write-Log "开始验证域账号：$($Cred.UserName)"
+
+    if (Test-DomainCredential -Credential $Cred -DomainName $DomainName) {
+        Write-Host "账号密码验证通过" -ForegroundColor Green
+        Write-Log "账号密码验证通过：$($Cred.UserName)" "SUCCESS"
+        $CredValid = $true
+    }
+    else {
+        Write-Host "账号密码验证失败，请重新输入。" -ForegroundColor Red
+        Write-Log "账号密码验证失败：$($Cred.UserName)" "ERROR"
+        $CredValid = $false
+    }
+}
+until ($CredValid)
 
 # Image select
 do {
