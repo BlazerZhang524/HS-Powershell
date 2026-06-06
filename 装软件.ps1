@@ -452,7 +452,7 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-     Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred    
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred    
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
