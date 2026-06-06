@@ -15,7 +15,6 @@ if (-not $IsAdmin) {
     exit
 }
 
-#Standard package install
 Set-ExecutionPolicy RemoteSigned -Scope Process -Force
 
 # Log settings
@@ -80,7 +79,7 @@ function Test-DomainCredential {
 }
 
 Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
-
+# Standard package install
 function Install-StandardPackage {
     Write-Host ""
     Write-Host "开始安装办公软件"
