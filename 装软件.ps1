@@ -282,6 +282,44 @@ function Install-NetDrive {
         Write-Log "企业网盘安装失败，未检测到进程 zbox_client" "ERROR"
     }
 }
+#Domain binding and check
+function Join-DomainWithCheck {
+    param(
+        [string]$ComputerName,
+        [string]$DomainName,
+        [System.Management.Automation.PSCredential]$Credential
+    )
+
+    try {
+        Write-Host ""
+        Write-Host "开始修改计算机名并加入域" -ForegroundColor Yellow
+        Write-Log "准备修改计算机名为：$ComputerName"
+
+        Rename-Computer -NewName $ComputerName -Force -ErrorAction Stop
+
+        Write-Log "准备加入域：$DomainName"
+
+        Add-Computer -DomainName $DomainName `
+            -Options JoinWithNewName `
+            -Force `
+            -Credential $Credential `
+            -ErrorAction Stop
+
+        Write-Host "计算机改名和加域成功，准备继续清理并重启。" -ForegroundColor Green
+        Write-Log "计算机改名和加域成功，新计算机名：$ComputerName，域：$DomainName" "SUCCESS"
+    }
+    catch {
+        Write-Host ""
+        Write-Host "加域失败，脚本已停止！" -ForegroundColor Red
+        Write-Host "请检查域账号密码、网络、DNS、计算机名是否重复。" -ForegroundColor Red
+        Write-Host "错误信息：$($_.Exception.Message)" -ForegroundColor Red
+
+        Write-Log "加域失败，脚本停止：$($_.Exception.Message)" "ERROR"
+
+        Read-Host "按回车键退出"
+        exit 1
+    }
+}
 
 $DomainName = "hs.hspharm.com"
 
@@ -371,14 +409,7 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始修改计算机名并加入域"
-    Write-Log "准备修改计算机名为：$CN"
-
-    Rename-Computer -NewName $CN -Force
-
-    Write-Log "准备加入域：$DomainName"
-    Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
@@ -421,14 +452,7 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始修改计算机名并加入域"
-    Write-Log "准备修改计算机名为：$CN"
-
-    Rename-Computer -NewName $CN -Force
-
-    Write-Log "准备加入域：$DomainName"
-    Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
+     Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred    
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
