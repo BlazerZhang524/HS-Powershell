@@ -55,6 +55,30 @@ function Write-InstallResult {
     }
 }
 
+#verify domain account
+function Test-DomainCredential {
+    param(
+        [System.Management.Automation.PSCredential]$Credential,
+        [string]$DomainName
+    )
+
+    try {
+        $UserName = $Credential.UserName
+        $Password = $Credential.GetNetworkCredential().Password
+
+        $Entry = New-Object DirectoryServices.DirectoryEntry("LDAP://$DomainName", $UserName, $Password)
+
+        # 触发认证
+        $null = $Entry.NativeObject
+
+        $Entry.Dispose()
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
 
 function Install-StandardPackage {
