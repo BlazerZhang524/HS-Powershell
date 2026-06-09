@@ -248,7 +248,7 @@ function Install-Print {
     Write-Host ""
     Write-Log "开始安装刷卡打印插件"
 
-    Start-Process -FilePath "C:\temp\PrintToCloud setup.exe" -ArgumentList "-silent 10.102.27.15 -force"
+    Start-Process -FilePath "C:\temp\PrintToCloud setup.exe" -ArgumentList "-silent 10.102.27.15 -force -mono"
 
     Start-Sleep -Seconds 120
 
