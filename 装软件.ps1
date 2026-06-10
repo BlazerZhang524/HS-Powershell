@@ -397,10 +397,6 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
-    Install-Lianruan
-
-    Start-Sleep -Seconds 10
-
     Install-Encryption
 
     Start-Sleep -Seconds 20
@@ -410,6 +406,10 @@ if ($ImageCode -eq "standard") {
     Start-Sleep -Seconds 10
 
     Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred
+
+    Install-Lianruan
+
+    Start-Sleep -Seconds 10
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
@@ -436,10 +436,6 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Install-Lianruan
-
-    Start-Sleep -Seconds 10
-
     Install-NetDrive
 
     Start-Sleep -Seconds 10
@@ -452,7 +448,11 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred    
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred  
+
+    Install-Lianruan
+
+    Start-Sleep -Seconds 10
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
