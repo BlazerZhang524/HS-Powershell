@@ -216,18 +216,52 @@ function Install-Lianruan {
     Write-Host ""
     Write-Log "开始安装联软"
 
-    Start-Process -FilePath "C:\temp\联软桌面助手.exe" -ArgumentList "/quiet /NoQueryBox"
+    $InstallerPath     = "C:\temp\联软桌面助手.exe"
+    $ServiceName       = "UniAccessAgent"
+    $InitialWaitSec    = 60    # 先固定等待1分钟
+    $TimeoutSec        = 600   # 后续最多再等10分钟
+    $IntervalSec       = 5     # 每5秒检测一次
 
-    Start-Sleep -Seconds 120 
+    if (-not (Test-Path $InstallerPath)) {
+        Write-Host "联软安装失败，未找到安装程序：$InstallerPath" -ForegroundColor Red
+        Write-Log "联软安装失败，未找到安装程序：$InstallerPath" "ERROR"
+        return $false
+    }
 
-    if (Get-Service UniAccessAgent -ErrorAction SilentlyContinue) {
-        Write-Host "联软安装成功" -ForegroundColor Green
-        Write-Log "联软安装成功，检测到服务 UniAccessAgent" "SUCCESS"
+    try {
+        Start-Process -FilePath $InstallerPath -ArgumentList "/quiet /NoQueryBox"
+        Write-Log "已启动联软安装程序"
     }
-    else {
-        Write-Host "联软安装失败" -ForegroundColor Red
-        Write-Log "联软安装失败，未检测到服务 UniAccessAgent" "ERROR"
+    catch {
+        Write-Host "联软安装程序启动失败" -ForegroundColor Red
+        Write-Log "联软安装程序启动失败：$($_.Exception.Message)" "ERROR"
+        return $false
     }
+
+    Write-Host "已启动联软安装，先等待 $InitialWaitSec 秒..."
+    Start-Sleep -Seconds $InitialWaitSec
+
+    Write-Host "开始检测联软服务 $ServiceName，每 $IntervalSec 秒检测一次，最多等待 $TimeoutSec 秒..."
+
+    $Elapsed = 0
+
+    while ($Elapsed -lt $TimeoutSec) {
+        $Service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+
+        if ($Service) {
+            Write-Host "联软安装成功，检测到服务 $ServiceName" -ForegroundColor Green
+            Write-Log "联软安装成功，检测到服务 $ServiceName，当前状态：$($Service.Status)" "SUCCESS"
+            return $true
+        }
+
+        Start-Sleep -Seconds $IntervalSec
+        $Elapsed += $IntervalSec
+    }
+
+    Write-Host "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" -ForegroundColor Red
+    Write-Log "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" "ERROR"
+
+    return $false
 }
 
 #Install 半透明mcafee
