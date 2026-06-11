@@ -218,7 +218,7 @@ function Install-Lianruan {
 
     Start-Process -FilePath "C:\temp\联软桌面助手.exe" -ArgumentList "/quiet /NoQueryBox"
 
-    Start-Sleep 120
+    Start-Sleep -Seconds 120 
 
     if (Get-Service UniAccessAgent -ErrorAction SilentlyContinue) {
         Write-Host "联软安装成功" -ForegroundColor Green
