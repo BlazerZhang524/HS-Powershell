@@ -26,6 +26,10 @@ if (!(Test-Path $Script:LogDir)) {
 
 $Script:LogFile = Join-Path $Script:LogDir ("LaptopSetup_{0}_{1}.log" -f $env:COMPUTERNAME, (Get-Date -Format "yyyyMMdd_HHmmss"))
 
+# 全局安装失败标记：任意软件安装失败后，最后不清理 C:\temp，也不自动重启
+$Script:InstallFailed = $false
+$Script:FailedSoftwareList = @()
+
 function Write-Log {
     param(
         [string]$Message,
@@ -36,6 +40,28 @@ function Write-Log {
     $Line = "$Time [$Level] $Message"
 
     Add-Content -Path $Script:LogFile -Value $Line -Encoding UTF8
+}
+
+function Register-InstallFailure {
+    param(
+        [string]$SoftwareName,
+        [string]$Reason = ""
+    )
+
+    $Script:InstallFailed = $true
+
+    if ($Reason) {
+        $Item = "$SoftwareName - $Reason"
+    }
+    else {
+        $Item = "$SoftwareName"
+    }
+
+    if ($Script:FailedSoftwareList -notcontains $Item) {
+        $Script:FailedSoftwareList += $Item
+    }
+
+    Write-Log "记录安装失败：$Item" "ERROR"
 }
 
 function Write-InstallResult {
@@ -51,7 +77,51 @@ function Write-InstallResult {
     else {
         Write-Host "$SoftwareName 安装失败，ExitCode=$ExitCode" -ForegroundColor Red
         Write-Log "$SoftwareName 安装失败，ExitCode=$ExitCode" "ERROR"
+        Register-InstallFailure -SoftwareName $SoftwareName -Reason "ExitCode=$ExitCode"
     }
+}
+
+function Complete-SetupAndReboot {
+    param(
+        [string]$EnvironmentName
+    )
+
+    if ($Script:InstallFailed) {
+        Write-Host ""
+        Write-Host "检测到有软件安装失败！" -ForegroundColor Red
+        Write-Host "为避免丢失安装文件，脚本不会清理 C:\temp，也不会自动重启。" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "失败的软件如下：" -ForegroundColor Red
+
+        foreach ($FailedItem in $Script:FailedSoftwareList) {
+            Write-Host " - $FailedItem" -ForegroundColor Red
+        }
+
+        Write-Host ""
+        Write-Host "请操作员根据日志和提示手动处理失败项。" -ForegroundColor Yellow
+        Write-Host "日志路径：$Script:LogFile" -ForegroundColor Yellow
+
+        Write-Log "$EnvironmentName 流程检测到软件安装失败，跳过 C:\temp 清理和自动重启" "ERROR"
+        foreach ($FailedItem in $Script:FailedSoftwareList) {
+            Write-Log "失败项：$FailedItem" "ERROR"
+        }
+
+        Read-Host "按回车键退出"
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
+    Write-Log "$EnvironmentName 流程执行完成，准备清理 C:\temp，保留 InstallLogs 日志文件夹"
+
+    Get-ChildItem "C:\temp" -Force |
+    Where-Object { $_.FullName -ine $Script:LogDir } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Write-Host "C:\temp 清理完成，准备重启" -ForegroundColor Yellow
+    Write-Log "C:\temp 清理完成，准备重启"
+
+    shutdown.exe /r /t 120 /c "加域完成，2分钟后重启！"
 }
 
 #verify domain account
@@ -79,6 +149,114 @@ function Test-DomainCredential {
 }
 
 Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
+# Office 2016 安装：先检测并静默卸载预装 Microsoft 365 / Office 365，再安装 Office 2016
+function Install-Office2016AfterRemoveM365 {
+    Write-Host ""
+    Write-Host "开始检查是否存在预装 Microsoft 365 / Office 365"
+    Write-Log "开始检查是否存在预装 Microsoft 365 / Office 365"
+
+    $UninstallPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+
+    $M365Apps = Get-ItemProperty $UninstallPaths -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.DisplayName -and
+            (
+                $_.DisplayName -match "Microsoft 365" -or
+                $_.DisplayName -match "Office 365"
+            ) -and
+            $_.DisplayName -notmatch "Visio" -and
+            $_.DisplayName -notmatch "Project" -and
+            $_.DisplayName -notmatch "Language" -and
+            $_.DisplayName -notmatch "Proofing"
+        } |
+        Select-Object DisplayName, DisplayVersion -Unique
+
+    if ($M365Apps) {
+        Write-Host "检测到预装 Microsoft 365 / Office 365：" -ForegroundColor Yellow
+        Write-Log "检测到预装 Microsoft 365 / Office 365" "WARNING"
+
+        foreach ($App in $M365Apps) {
+            Write-Host ("已安装：" + $App.DisplayName + " " + $App.DisplayVersion) -ForegroundColor Yellow
+            Write-Log ("已安装：" + $App.DisplayName + " " + $App.DisplayVersion) "WARNING"
+        }
+
+        $ODTDir = "C:\temp\ODT"
+        $ODTSetup = Join-Path $ODTDir "setup.exe"
+        $RemoveXml = Join-Path $ODTDir "remove_office_c2r.xml"
+
+        if (-not (Test-Path $ODTSetup)) {
+            Write-Host "未找到 ODT setup.exe，无法静默卸载 Microsoft 365：$ODTSetup" -ForegroundColor Red
+            Write-Log "未找到 ODT setup.exe，无法静默卸载 Microsoft 365：$ODTSetup" "ERROR"
+            Write-Host "为避免 Office 冲突，跳过 Office2016 安装。" -ForegroundColor Red
+            Write-Log "为避免 Office 冲突，跳过 Office2016 安装。" "ERROR"
+            Register-InstallFailure -SoftwareName "Office2016ProPlus" -Reason "检测到 Microsoft 365 但未找到 ODT setup.exe，未执行 Office2016 安装"
+            return $false
+        }
+
+        $RemoveXmlContent = @"
+<Configuration>
+  <Remove All="TRUE" />
+  <Display Level="None" AcceptEULA="TRUE" />
+</Configuration>
+"@
+
+        Set-Content -Path $RemoveXml -Value $RemoveXmlContent -Encoding UTF8
+
+        Write-Host "开始静默卸载 Microsoft 365 / Office 365" -ForegroundColor Yellow
+        Write-Log "开始通过 ODT 静默卸载 Microsoft 365 / Office 365"
+
+        $RemoveProcess = Start-Process -FilePath $ODTSetup `
+            -ArgumentList "/configure `"$RemoveXml`"" `
+            -Wait `
+            -PassThru
+
+        if ($RemoveProcess.ExitCode -eq 0 -or $RemoveProcess.ExitCode -eq 3010) {
+            Write-Host "Microsoft 365 / Office 365 卸载完成，ExitCode=$($RemoveProcess.ExitCode)" -ForegroundColor Green
+            Write-Log "Microsoft 365 / Office 365 卸载完成，ExitCode=$($RemoveProcess.ExitCode)" "SUCCESS"
+            Start-Sleep -Seconds 20
+        }
+        else {
+            Write-Host "Microsoft 365 / Office 365 卸载失败，ExitCode=$($RemoveProcess.ExitCode)" -ForegroundColor Red
+            Write-Log "Microsoft 365 / Office 365 卸载失败，ExitCode=$($RemoveProcess.ExitCode)" "ERROR"
+            Write-Host "为避免 Office 冲突，跳过 Office2016 安装。" -ForegroundColor Red
+            Write-Log "为避免 Office 冲突，跳过 Office2016 安装。" "ERROR"
+            Register-InstallFailure -SoftwareName "Microsoft 365 / Office 365 卸载" -Reason "ExitCode=$($RemoveProcess.ExitCode)"
+            Register-InstallFailure -SoftwareName "Office2016ProPlus" -Reason "Microsoft 365 未卸载成功，跳过安装"
+            return $false
+        }
+    }
+    else {
+        Write-Host "未检测到预装 Microsoft 365 / Office 365，直接安装 Office2016ProPlus" -ForegroundColor Green
+        Write-Log "未检测到预装 Microsoft 365 / Office 365，直接安装 Office2016ProPlus" "SUCCESS"
+    }
+
+    $OfficeInstaller = "C:\temp\Office2016\setup.exe"
+
+    if (-not (Test-Path $OfficeInstaller)) {
+        Write-Host "Office2016 安装失败，未找到安装程序：$OfficeInstaller" -ForegroundColor Red
+        Write-Log "Office2016 安装失败，未找到安装程序：$OfficeInstaller" "ERROR"
+        Register-InstallFailure -SoftwareName "Office2016ProPlus" -Reason "未找到安装程序 $OfficeInstaller"
+        return $false
+    }
+
+    Write-Host "开始安装 Office2016ProPlus"
+    Write-Host ""
+    Write-Log "开始安装 Office2016ProPlus"
+
+    $OfficeProcess = Start-Process -FilePath $OfficeInstaller -Wait -PassThru
+    Write-InstallResult -SoftwareName "Office2016ProPlus" -ExitCode $OfficeProcess.ExitCode
+
+    if ($OfficeProcess.ExitCode -eq 0 -or $OfficeProcess.ExitCode -eq 3010) {
+        return $true
+    }
+    else {
+        return $false
+    }
+}
+
 # Standard package install
 function Install-StandardPackage {
     Write-Host ""
@@ -87,10 +265,11 @@ function Install-StandardPackage {
     Write-Log "开始安装标准办公软件包"
 
     #install office2016proplus
-    Write-Host "安装Office2016ProPlus"
-    Write-Host ""
-    $OfficeProcess = Start-Process -FilePath "C:\temp\Office2016\setup.exe" -Wait -PassThru
-    Write-InstallResult -SoftwareName "Office2016ProPlus" -ExitCode $OfficeProcess.ExitCode
+    $OfficeResult = Install-Office2016AfterRemoveM365
+    if (-not $OfficeResult) {
+        Write-Host "Office2016 未安装成功，继续安装后续办公软件。" -ForegroundColor Yellow
+        Write-Log "Office2016 未安装成功，继续安装后续办公软件。" "WARNING"
+    }
     Write-Host ""
 
     #install tencent meeting
@@ -225,6 +404,7 @@ function Install-Lianruan {
     if (-not (Test-Path $InstallerPath)) {
         Write-Host "联软安装失败，未找到安装程序：$InstallerPath" -ForegroundColor Red
         Write-Log "联软安装失败，未找到安装程序：$InstallerPath" "ERROR"
+        Register-InstallFailure -SoftwareName "联软" -Reason "未找到安装程序 $InstallerPath"
         return $false
     }
 
@@ -235,6 +415,7 @@ function Install-Lianruan {
     catch {
         Write-Host "联软安装程序启动失败" -ForegroundColor Red
         Write-Log "联软安装程序启动失败：$($_.Exception.Message)" "ERROR"
+        Register-InstallFailure -SoftwareName "联软" -Reason "安装程序启动失败：$($_.Exception.Message)"
         return $false
     }
 
@@ -260,6 +441,7 @@ function Install-Lianruan {
 
     Write-Host "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" -ForegroundColor Red
     Write-Log "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" "ERROR"
+    Register-InstallFailure -SoftwareName "联软" -Reason "未检测到服务 $ServiceName"
 
     return $false
 }
@@ -293,6 +475,7 @@ function Install-Print {
     else {
         Write-Host "刷卡打印插件安装失败" -ForegroundColor Red
         Write-Log "刷卡打印插件安装失败，未检测到 C:\rsprinterex\PrintToCloud.exe" "ERROR"
+        Register-InstallFailure -SoftwareName "刷卡打印插件" -Reason "未检测到 C:\rsprinterex\PrintToCloud.exe"
     }
 }
 
@@ -314,6 +497,7 @@ function Install-NetDrive {
     else {
         Write-Host "企业网盘安装失败" -ForegroundColor Red
         Write-Log "企业网盘安装失败，未检测到进程 zbox_client" "ERROR"
+        Register-InstallFailure -SoftwareName "企业网盘" -Reason "未检测到进程 zbox_client"
     }
 }
 #Domain binding and check
@@ -445,18 +629,7 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
-    Write-Log "标准环境流程执行完成，准备清理 C:\temp，保留 InstallLogs 日志文件夹"
-
-    Get-ChildItem "C:\temp" -Force |
-    Where-Object { $_.FullName -ine $Script:LogDir } |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-    Write-Host "C:\temp 清理完成，准备重启" -ForegroundColor Yellow
-    Write-Log "C:\temp 清理完成，准备重启"
-
-    shutdown.exe /r /t 120 /c "加域完成，2分钟后重启！"
+    Complete-SetupAndReboot -EnvironmentName "标准环境"
 }
 elseif ($ImageCode -eq "halfbypass") {
 
@@ -488,16 +661,5 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
-    Write-Log "半透明环境流程执行完成，准备清理 C:\temp，保留 InstallLogs 日志文件夹"
-
-    Get-ChildItem "C:\temp" -Force |
-    Where-Object { $_.FullName -ine $Script:LogDir } |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-    Write-Host "C:\temp 清理完成，准备重启" -ForegroundColor Yellow
-    Write-Log "C:\temp 清理完成，准备重启"
-
-    shutdown.exe /r /t 120 /c "加域完成，2分钟后重启！"
+    Complete-SetupAndReboot -EnvironmentName "半透明环境"
 }
