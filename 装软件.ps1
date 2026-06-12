@@ -198,16 +198,6 @@ function Test-DomainCredential {
     }
 }
 
-Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
-$LocalAdminPassword = "hspharm@Gjdx2023"
-
-$AdminConfigResult = Enable-BuiltInAdministrator -PasswordPlainText $LocalAdminPassword
-
-if (-not $AdminConfigResult) {
-    Write-Host "内置 Administrator 账号配置失败，脚本会继续执行，但最后不会自动清理和重启。" -ForegroundColor Red
-    Write-Log "内置 Administrator 账号配置失败，继续后续流程。" "ERROR"
-}
-# Office 2016 安装：先检测并静默卸载预装 Microsoft 365 / Office 365，再安装 Office 2016
 function Install-Office2016AfterRemoveM365 {
     Write-Host ""
     Write-Host "开始检查是否存在预装 Microsoft 365 / Office 365"
@@ -314,6 +304,19 @@ function Install-Office2016AfterRemoveM365 {
         return $false
     }
 }
+
+
+Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
+$LocalAdminPassword = "hspharm@Gjdx2023"
+
+$AdminConfigResult = Enable-BuiltInAdministrator -PasswordPlainText $LocalAdminPassword
+
+if (-not $AdminConfigResult) {
+    Write-Host "内置 Administrator 账号配置失败，脚本会继续执行，但最后不会自动清理和重启。" -ForegroundColor Red
+    Write-Log "内置 Administrator 账号配置失败，继续后续流程。" "ERROR"
+}
+# Office 2016 安装：先检测并静默卸载预装 Microsoft 365 / Office 365，再安装 Office 2016
+
 
 # Standard package install
 function Install-StandardPackage {
