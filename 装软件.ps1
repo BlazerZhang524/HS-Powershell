@@ -64,6 +64,56 @@ function Register-InstallFailure {
     Write-Log "记录安装失败：$Item" "ERROR"
 }
 
+function Enable-BuiltInAdministrator {
+    param(
+        [string]$PasswordPlainText
+    )
+
+    Write-Host ""
+    Write-Host "开始配置内置 Administrator 账号" -ForegroundColor Yellow
+    Write-Log "开始配置内置 Administrator 账号"
+
+    try {
+        # 通过 SID 结尾 -500 查找内置管理员账号，避免系统语言或重命名导致找不到
+        $BuiltInAdmin = Get-LocalUser | Where-Object {
+            $_.SID.Value -match "-500$"
+        } | Select-Object -First 1
+
+        if (-not $BuiltInAdmin) {
+            throw "未找到内置 Administrator 账号（SID 结尾 -500）。"
+        }
+
+        Write-Host "检测到内置管理员账号：$($BuiltInAdmin.Name)" -ForegroundColor Yellow
+        Write-Log "检测到内置管理员账号：$($BuiltInAdmin.Name)"
+
+        $SecurePassword = ConvertTo-SecureString $PasswordPlainText -AsPlainText -Force
+
+        # 设置密码
+        Set-LocalUser -Name $BuiltInAdmin.Name -Password $SecurePassword -ErrorAction Stop
+
+        # 设置密码永不过期
+        Set-LocalUser -Name $BuiltInAdmin.Name -PasswordNeverExpires $true -ErrorAction Stop
+
+        # 启用账号
+        Enable-LocalUser -Name $BuiltInAdmin.Name -ErrorAction Stop
+
+        Write-Host "内置 Administrator 账号已启用，密码已设置，密码永不过期。" -ForegroundColor Green
+        Write-Log "内置 Administrator 账号已启用，密码已设置，密码永不过期。" "SUCCESS"
+
+        return $true
+    }
+    catch {
+        Write-Host "内置 Administrator 账号配置失败：$($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "内置 Administrator 账号配置失败：$($_.Exception.Message)" "ERROR"
+
+        if (Get-Command Register-InstallFailure -ErrorAction SilentlyContinue) {
+            Register-InstallFailure -SoftwareName "内置 Administrator 账号配置" -Reason $_.Exception.Message
+        }
+
+        return $false
+    }
+}
+
 function Write-InstallResult {
     param(
         [string]$SoftwareName,
@@ -149,6 +199,14 @@ function Test-DomainCredential {
 }
 
 Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
+$LocalAdminPassword = "hspharm@Gjdx2023"
+
+$AdminConfigResult = Enable-BuiltInAdministrator -PasswordPlainText $LocalAdminPassword
+
+if (-not $AdminConfigResult) {
+    Write-Host "内置 Administrator 账号配置失败，脚本会继续执行，但最后不会自动清理和重启。" -ForegroundColor Red
+    Write-Log "内置 Administrator 账号配置失败，继续后续流程。" "ERROR"
+}
 # Office 2016 安装：先检测并静默卸载预装 Microsoft 365 / Office 365，再安装 Office 2016
 function Install-Office2016AfterRemoveM365 {
     Write-Host ""
