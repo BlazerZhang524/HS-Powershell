@@ -15,7 +15,6 @@ if (-not $IsAdmin) {
     exit
 }
 
-#Standard package install
 Set-ExecutionPolicy RemoteSigned -Scope Process -Force
 
 # Log settings
@@ -55,8 +54,32 @@ function Write-InstallResult {
     }
 }
 
-Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
+#verify domain account
+function Test-DomainCredential {
+    param(
+        [System.Management.Automation.PSCredential]$Credential,
+        [string]$DomainName
+    )
 
+    try {
+        $UserName = $Credential.UserName
+        $Password = $Credential.GetNetworkCredential().Password
+
+        $Entry = New-Object DirectoryServices.DirectoryEntry("LDAP://$DomainName", $UserName, $Password)
+
+        # 触发认证
+        $null = $Entry.NativeObject
+
+        $Entry.Dispose()
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+Write-Log "脚本开始执行，当前计算机名：$env:COMPUTERNAME"
+# Standard package install
 function Install-StandardPackage {
     Write-Host ""
     Write-Host "开始安装办公软件"
@@ -193,18 +216,52 @@ function Install-Lianruan {
     Write-Host ""
     Write-Log "开始安装联软"
 
-    Start-Process -FilePath "C:\temp\联软桌面助手.exe" -ArgumentList "/quiet /NoQueryBox"
+    $InstallerPath     = "C:\temp\联软桌面助手.exe"
+    $ServiceName       = "UniAccessAgent"
+    $InitialWaitSec    = 60    # 先固定等待1分钟
+    $TimeoutSec        = 600   # 后续最多再等10分钟
+    $IntervalSec       = 5     # 每5秒检测一次
 
-    Start-Sleep 120
+    if (-not (Test-Path $InstallerPath)) {
+        Write-Host "联软安装失败，未找到安装程序：$InstallerPath" -ForegroundColor Red
+        Write-Log "联软安装失败，未找到安装程序：$InstallerPath" "ERROR"
+        return $false
+    }
 
-    if (Get-Service UniAccessAgent -ErrorAction SilentlyContinue) {
-        Write-Host "联软安装成功" -ForegroundColor Green
-        Write-Log "联软安装成功，检测到服务 UniAccessAgent" "SUCCESS"
+    try {
+        Start-Process -FilePath $InstallerPath -ArgumentList "/quiet /NoQueryBox"
+        Write-Log "已启动联软安装程序"
     }
-    else {
-        Write-Host "联软安装失败" -ForegroundColor Red
-        Write-Log "联软安装失败，未检测到服务 UniAccessAgent" "ERROR"
+    catch {
+        Write-Host "联软安装程序启动失败" -ForegroundColor Red
+        Write-Log "联软安装程序启动失败：$($_.Exception.Message)" "ERROR"
+        return $false
     }
+
+    Write-Host "已启动联软安装，先等待 $InitialWaitSec 秒..."
+    Start-Sleep -Seconds $InitialWaitSec
+
+    Write-Host "开始检测联软服务 $ServiceName，每 $IntervalSec 秒检测一次，最多等待 $TimeoutSec 秒..."
+
+    $Elapsed = 0
+
+    while ($Elapsed -lt $TimeoutSec) {
+        $Service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+
+        if ($Service) {
+            Write-Host "联软安装成功，检测到服务 $ServiceName" -ForegroundColor Green
+            Write-Log "联软安装成功，检测到服务 $ServiceName，当前状态：$($Service.Status)" "SUCCESS"
+            return $true
+        }
+
+        Start-Sleep -Seconds $IntervalSec
+        $Elapsed += $IntervalSec
+    }
+
+    Write-Host "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" -ForegroundColor Red
+    Write-Log "联软安装失败，等待 $InitialWaitSec 秒后，又检测 $TimeoutSec 秒，仍未发现服务 $ServiceName" "ERROR"
+
+    return $false
 }
 
 #Install 半透明mcafee
@@ -225,7 +282,7 @@ function Install-Print {
     Write-Host ""
     Write-Log "开始安装刷卡打印插件"
 
-    Start-Process -FilePath "C:\temp\PrintToCloud setup.exe" -ArgumentList "-silent 10.102.27.15 -force"
+    Start-Process -FilePath "C:\temp\PrintToCloud setup.exe" -ArgumentList "-silent 10.102.27.15 -force -mono"
 
     Start-Sleep -Seconds 120
 
@@ -259,16 +316,72 @@ function Install-NetDrive {
         Write-Log "企业网盘安装失败，未检测到进程 zbox_client" "ERROR"
     }
 }
+#Domain binding and check
+function Join-DomainWithCheck {
+    param(
+        [string]$ComputerName,
+        [string]$DomainName,
+        [System.Management.Automation.PSCredential]$Credential
+    )
 
-#Set computer name
+    try {
+        Write-Host ""
+        Write-Host "开始修改计算机名并加入域" -ForegroundColor Yellow
+        Write-Log "准备修改计算机名为：$ComputerName"
+
+        Rename-Computer -NewName $ComputerName -Force -ErrorAction Stop
+
+        Write-Log "准备加入域：$DomainName"
+
+        Add-Computer -DomainName $DomainName `
+            -Options JoinWithNewName `
+            -Force `
+            -Credential $Credential `
+            -ErrorAction Stop
+
+        Write-Host "计算机改名和加域成功，准备继续清理并重启。" -ForegroundColor Green
+        Write-Log "计算机改名和加域成功，新计算机名：$ComputerName，域：$DomainName" "SUCCESS"
+    }
+    catch {
+        Write-Host ""
+        Write-Host "加域失败，脚本已停止！" -ForegroundColor Red
+        Write-Host "请检查域账号密码、网络、DNS、计算机名是否重复。" -ForegroundColor Red
+        Write-Host "错误信息：$($_.Exception.Message)" -ForegroundColor Red
+
+        Write-Log "加域失败，脚本停止：$($_.Exception.Message)" "ERROR"
+
+        Read-Host "按回车键退出"
+        exit 1
+    }
+}
+
+$DomainName = "hs.hspharm.com"
+
 Write-Host "请输入计算机名" -ForegroundColor Yellow
 $CN = Read-Host
 Write-Log "输入的新计算机名：$CN"
 
-Write-Host "请输入管理员账号" -ForegroundColor Yellow
-$Cred = Get-Credential
+do {
+    Write-Host "请输入有加域权限的管理员账号" -ForegroundColor Yellow
+    Write-Host "建议格式：HS\用户名 或 用户名@hs.hspharm.com" -ForegroundColor Yellow
 
-$DomainName = "hs.hspharm.com"
+    $Cred = Get-Credential
+
+    Write-Host "正在验证账号密码..." -ForegroundColor Yellow
+    Write-Log "开始验证域账号：$($Cred.UserName)"
+
+    if (Test-DomainCredential -Credential $Cred -DomainName $DomainName) {
+        Write-Host "账号密码验证通过" -ForegroundColor Green
+        Write-Log "账号密码验证通过：$($Cred.UserName)" "SUCCESS"
+        $CredValid = $true
+    }
+    else {
+        Write-Host "账号密码验证失败，请重新输入。" -ForegroundColor Red
+        Write-Log "账号密码验证失败：$($Cred.UserName)" "ERROR"
+        $CredValid = $false
+    }
+}
+until ($CredValid)
 
 # Image select
 do {
@@ -318,10 +431,6 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
-    Install-Lianruan
-
-    Start-Sleep -Seconds 10
-
     Install-Encryption
 
     Start-Sleep -Seconds 20
@@ -330,14 +439,11 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始修改计算机名并加入域"
-    Write-Log "准备修改计算机名为：$CN"
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred
 
-    Rename-Computer -NewName $CN -Force
+    Install-Lianruan
 
-    Write-Log "准备加入域：$DomainName"
-    Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
+    Start-Sleep -Seconds 10
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
@@ -364,10 +470,6 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Install-Lianruan
-
-    Start-Sleep -Seconds 10
-
     Install-NetDrive
 
     Start-Sleep -Seconds 10
@@ -380,14 +482,11 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 10
 
-    Write-Host ""
-    Write-Host "开始修改计算机名并加入域"
-    Write-Log "准备修改计算机名为：$CN"
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred  
 
-    Rename-Computer -NewName $CN -Force
+    Install-Lianruan
 
-    Write-Log "准备加入域：$DomainName"
-    Add-Computer -DomainName $DomainName -Options JoinWithNewName -Force -Credential $Cred
+    Start-Sleep -Seconds 10
 
     Write-Host ""
     Write-Host "开始清理 C:\temp，保留 InstallLogs 日志文件夹" -ForegroundColor Yellow
