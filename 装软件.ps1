@@ -755,6 +755,10 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 10
 
+    Register-DeleteCurrentSetupUserTask
+
+    Start-sleep -Seconds 10
+
     Complete-SetupAndReboot -EnvironmentName "标准环境"
 }
 elseif ($ImageCode -eq "halfbypass") {
@@ -786,6 +790,10 @@ elseif ($ImageCode -eq "halfbypass") {
     Install-Lianruan
 
     Start-Sleep -Seconds 10
+
+    Register-DeleteCurrentSetupUserTask
+
+    Start-sleep -Seconds 10
 
     Complete-SetupAndReboot -EnvironmentName "半透明环境"
 }
