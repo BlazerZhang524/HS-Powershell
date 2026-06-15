@@ -198,6 +198,71 @@ function Test-DomainCredential {
     }
 }
 
+function Register-DeleteCurrentSetupUserTask {
+    $TaskName = "DeleteTemporarySetupUser"
+    $ScriptPath = "C:\temp\DeleteTemporarySetupUser.ps1"
+
+    $CurrentUser = (Get-CimInstance Win32_ComputerSystem).UserName
+
+    if (-not $CurrentUser) {
+        Write-Host "未检测到当前登录用户，跳过临时账号删除任务。" -ForegroundColor Yellow
+        Write-Log "未检测到当前登录用户，跳过临时账号删除任务。" "WARNING"
+        return
+    }
+
+    $UserParts = $CurrentUser -split "\\", 2
+    $UserDomain = $UserParts[0]
+    $UserName = $UserParts[1]
+
+    if ($UserDomain -ne $env:COMPUTERNAME) {
+        Write-Host "当前登录用户不是本地账号：$CurrentUser，跳过删除。" -ForegroundColor Yellow
+        Write-Log "当前登录用户不是本地账号：$CurrentUser，跳过删除。" "WARNING"
+        return
+    }
+
+    $LocalUser = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+
+    if (-not $LocalUser) {
+        Write-Host "未找到本地账号：$UserName，跳过删除。" -ForegroundColor Yellow
+        Write-Log "未找到本地账号：$UserName，跳过删除。" "WARNING"
+        return
+    }
+
+    if ($LocalUser.SID.Value -match "-500$") {
+        Write-Host "当前账号是内置 Administrator，禁止删除。" -ForegroundColor Red
+        Write-Log "当前账号是内置 Administrator，禁止删除。" "ERROR"
+        return
+    }
+
+    $ScriptContent = @"
+Start-Sleep -Seconds 30
+
+try {
+    `$User = Get-LocalUser -Name "$UserName" -ErrorAction SilentlyContinue
+
+    if (`$User -and `$User.SID.Value -notmatch "-500$") {
+        Remove-LocalUser -Name "$UserName" -ErrorAction Stop
+    }
+
+    Unregister-ScheduledTask -TaskName "$TaskName" -Confirm:`$false -ErrorAction SilentlyContinue
+    Remove-Item "$ScriptPath" -Force -ErrorAction SilentlyContinue
+}
+catch {
+}
+"@
+
+    Set-Content -Path $ScriptPath -Value $ScriptContent -Encoding UTF8 -Force
+
+    $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$ScriptPath`""
+    $Trigger = New-ScheduledTaskTrigger -AtStartup
+    $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
+
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Force
+
+    Write-Host "已创建临时账号删除任务，重启后会自动删除当前本地账号：$UserName。" -ForegroundColor Green
+    Write-Log "已创建临时账号删除任务，重启后会自动删除当前本地账号：$UserName。" "SUCCESS"
+}
+
 function Install-Office2016AfterRemoveM365 {
     Write-Host ""
     Write-Host "开始检查是否存在预装 Microsoft 365 / Office 365"
