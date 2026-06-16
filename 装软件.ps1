@@ -200,7 +200,10 @@ function Test-DomainCredential {
 
 function Register-DeleteCurrentSetupUserTask {
     $TaskName = "DeleteTemporarySetupUser"
-    $ScriptPath = "C:\temp\DeleteTemporarySetupUser.ps1"
+    $ScriptDir = "C:\ProgramData\HSPHARM"
+    $ScriptPath = Join-Path $ScriptDir "DeleteTemporarySetupUser.ps1"
+
+    New-Item -Path $ScriptDir -ItemType Directory -Force | Out-Null
 
     $CurrentUser = (Get-CimInstance Win32_ComputerSystem).UserName
 
