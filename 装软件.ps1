@@ -652,19 +652,23 @@ function Join-DomainWithCheck {
             -Credential $Credential `
             -ErrorAction Stop
 
-        Write-Host "计算机改名和加域成功，准备继续清理并重启。" -ForegroundColor Green
+        Write-Host "计算机改名和加域成功。" -ForegroundColor Green
         Write-Log "计算机改名和加域成功，新计算机名：$ComputerName，域：$DomainName" "SUCCESS"
+
+        return $true
     }
     catch {
         Write-Host ""
-        Write-Host "加域失败，脚本已停止！" -ForegroundColor Red
-        Write-Host "请检查域账号密码、网络、DNS、计算机名是否重复。" -ForegroundColor Red
+        Write-Host "加域失败，但脚本会继续执行后续安装流程。" -ForegroundColor Red
+        Write-Host "最后不会自动清理 C:\temp，也不会自动重启。" -ForegroundColor Yellow
+        Write-Host "请检查域账号密码、网络、DNS、计算机名是否重复。" -ForegroundColor Yellow
         Write-Host "错误信息：$($_.Exception.Message)" -ForegroundColor Red
 
-        Write-Log "加域失败，脚本停止：$($_.Exception.Message)" "ERROR"
+        Write-Log "加域失败，但继续后续流程：$($_.Exception.Message)" "ERROR"
 
-        Read-Host "按回车键退出"
-        exit 1
+        Register-InstallFailure -SoftwareName "改名加域" -Reason $_.Exception.Message
+
+        return $false
     }
 }
 
