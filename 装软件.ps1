@@ -241,6 +241,18 @@ function Register-DeleteCurrentSetupUserTask {
 Start-Sleep -Seconds 30
 
 try {
+
+    `$WifiList = @(
+        "Hansoh-V",
+        "guest-helpdesk"
+    )
+
+    foreach (`$SSID in `$WifiList) {
+
+        netsh wlan delete profile name="`$SSID" | Out-Null
+
+    }
+
     `$User = Get-LocalUser -Name "$UserName" -ErrorAction SilentlyContinue
 
     if (`$User -and `$User.SID.Value -notmatch "-500$") {
