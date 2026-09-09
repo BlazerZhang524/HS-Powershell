@@ -659,7 +659,7 @@ function Join-DomainWithCheck {
         Write-Log "准备加入域：$DomainName"
 
         Add-Computer -DomainName $DomainName `
-            -Options JoinWithNewName `
+            -Options JoinWithNewName,AccountCreate `
             -Force `
             -Credential $Credential `
             -ErrorAction Stop
