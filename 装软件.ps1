@@ -242,17 +242,6 @@ Start-Sleep -Seconds 30
 
 try {
 
-    `$WifiList = @(
-        "Hansoh-V",
-        "guest-helpdesk"
-    )
-
-    foreach (`$SSID in `$WifiList) {
-
-        netsh wlan delete profile name="`$SSID" | Out-Null
-
-    }
-
     `$User = Get-LocalUser -Name "$UserName" -ErrorAction SilentlyContinue
 
     if (`$User -and `$User.SID.Value -notmatch "-500$") {
@@ -483,6 +472,16 @@ function Install-Encryption {
     Write-InstallResult -SoftwareName "亿赛通加密软件" -ExitCode $encrypt.ExitCode
 }
 
+function Install-Yunshu{
+    Write-Host ""
+    Write-Host "开始安装云枢"
+    Write-Log "开始安装云枢"
+    
+    $Yunshu = Start-Process -FilePath "C:\temp\YunShu_2.9.18.12704_Hansoh.exe" -ArgumentList "/Setup /silent" -Wait -PassThru
+
+    Write-InstallResult -SoftwareName "云枢" -ExitCode $Yunshu.ExitCode
+}
+
 #Install Mcafee 
 function Install-AV1 {
     Write-Host ""
@@ -548,6 +547,8 @@ function Install-Lianruan {
         Register-InstallFailure -SoftwareName "联软" -Reason "未找到安装程序 $InstallerPath"
         return $false
     }
+
+    Unblock-File -LiteralPath $InstallerPath -ErrorAction SilentlyContinue
 
     try {
         Start-Process -FilePath $InstallerPath -ArgumentList "/quiet /NoQueryBox"
@@ -717,6 +718,7 @@ do {
     Write-Host "请选择环境"
     Write-Host "1. 标准环境"
     Write-Host "2. 半透明环境"
+    Write-Host "3. 亿格云环境"
 
     $Image = Read-Host
 
@@ -731,8 +733,13 @@ do {
             $ImageCode = "halfbypass"
             $validChoice = $true
         }
+        "3" {
+            $ImageEnv = "亿格云环境"
+            $ImageCode = "eagle"
+            $validChoice = $true
+        }
         default {
-            Write-Host "输入无效，请重新选择1或2。" -ForegroundColor Red
+            Write-Host "输入无效，请重新选择1或2或3。" -ForegroundColor Red
             Write-Host ""
             $validChoice = $false
         }
@@ -752,6 +759,10 @@ if ($ImageCode -eq "standard") {
 
     Start-Sleep -Seconds 20
 
+    Install-AV1
+
+    Start-Sleep -Seconds 10
+
     Install-Print
 
     Start-Sleep -Seconds 10
@@ -763,10 +774,6 @@ if ($ImageCode -eq "standard") {
     Install-Encryption
 
     Start-Sleep -Seconds 20
-
-    Install-AV1
-
-    Start-Sleep -Seconds 10
 
     Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred
 
@@ -788,6 +795,10 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 20
 
+    Install-AV2
+
+    Start-Sleep -Seconds 10
+
     Install-Print
 
     Start-Sleep -Seconds 10
@@ -800,10 +811,6 @@ elseif ($ImageCode -eq "halfbypass") {
 
     Start-Sleep -Seconds 20
 
-    Install-AV2
-
-    Start-Sleep -Seconds 10
-
     Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred  
 
     Install-Lianruan
@@ -815,4 +822,37 @@ elseif ($ImageCode -eq "halfbypass") {
     Start-sleep -Seconds 10
 
     Complete-SetupAndReboot -EnvironmentName "半透明环境"
+}
+elseif($ImageCode -eq "eagle"){
+    Write-Log "开始安装亿格云环境"
+
+    Install-StandardPackage
+
+    Start-Sleep -Seconds 20
+
+    Install-Yunshu
+
+    Start-Sleep -Seconds 10
+
+    Install-Print
+
+    Start-Sleep -Seconds 10
+
+    Install-NetDrive
+
+    Start-Sleep -Seconds 10
+
+    Install-Encryption
+
+    Start-Sleep -Seconds 20
+
+    Join-DomainWithCheck -ComputerName $CN -DomainName $DomainName -Credential $Cred
+
+    Start-Sleep -Seconds 10
+
+    Register-DeleteCurrentSetupUserTask
+
+    Start-sleep -Seconds 10
+
+    Complete-SetupAndReboot -EnvironmentName "亿格云环境"
 }
