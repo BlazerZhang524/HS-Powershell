@@ -24,6 +24,49 @@ if not exist "%TargetPath%" (
     mkdir "%TargetPath%"
 )
 
+set "SourcePath=%~dp0."
+set "TargetPath=C:\temp"
+set "ScriptName=装软件.ps1"
+set "ScriptPath=%TargetPath%\%ScriptName%"
+
+:: 亿赛通安装源目录，%~dp0 会自动解析移动硬盘盘符
+set "EsafeSourcePath=%~dp0亿赛通加密软件"
+
+echo.
+echo Configuring Microsoft Defender exclusions...
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$paths = @(" ^
+    "    $env:EsafeSourcePath," ^
+    "    'C:\temp\亿赛通加密软件'," ^
+    "    'C:\Program Files\EsafeNet'" ^
+    ");" ^
+    "$current = @((Get-MpPreference).ExclusionPath);" ^
+    "foreach ($path in $paths) {" ^
+    "    if ($current -notcontains $path) {" ^
+    "        Add-MpPreference -ExclusionPath $path -ErrorAction Stop;" ^
+    "    }" ^
+    "};" ^
+    "$effective = @((Get-MpPreference).ExclusionPath);" ^
+    "$missing = @($paths | Where-Object { $effective -notcontains $_ });" ^
+    "if ($missing.Count -gt 0) {" ^
+    "    Write-Error ('Defender exclusions not effective: ' + ($missing -join ', '));" ^
+    "    exit 1;" ^
+    "};" ^
+    "$paths | ForEach-Object {" ^
+    "    Write-Host ('Defender excluded: ' + $_) -ForegroundColor Green;" ^
+    "}"
+
+if %errorlevel% neq 0 (
+    echo.
+    echo Failed to configure Defender exclusions.
+    pause
+    exit /b 1
+)
+
+echo Defender exclusions configured successfully.
+echo.
+
 echo Copying files from "%SourcePath%" to "%TargetPath%" ...
 robocopy "%SourcePath%" "%TargetPath%" /E /R:2 /W:2
 
